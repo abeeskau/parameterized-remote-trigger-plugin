@@ -82,6 +82,9 @@ public class RemoteBuildConfiguration extends Builder {
 
     private String                queryString         = "";
 
+    private String                strRemoteServerUrl  = null;
+    private static String         strWaitMessage      = "Waiting for the completion of ";
+
     @DataBoundConstructor
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild, String job, String token,
             String parameters, boolean enhancedLogging, JSONObject overrideAuth, JSONObject loadParamsFromFile, boolean preventRemoteBuildQueue,
@@ -376,7 +379,8 @@ public class RemoteBuildConfiguration extends Builder {
      */
     private String buildTriggerUrl(String job, String securityToken, Collection<String> params, boolean isRemoteJobParameterized) {
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
-        String triggerUrlString = remoteServer.getAddress().toString();
+        //String triggerUrlString = remoteServer.getAddress().toString();
+        String triggerUrlString = this.getRemoteServerUrl();
 
         // start building the proper URL based on known capabiltiies of the remote server
         if (remoteServer.getHasBuildTokenRootSupport()) {
@@ -423,9 +427,9 @@ public class RemoteBuildConfiguration extends Builder {
      * @return fully formed, fully qualified remote trigger URL
      */
     private String buildGetUrl(String job, String securityToken) {
-
-        RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
-        String urlString = remoteServer.getAddress().toString();
+        //RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
+        //String urlString = remoteServer.getAddress().toString();
+        String urlString = this.getRemoteServerUrl();
 
         urlString += "/job/";
         urlString += this.encodeValue(job);
@@ -470,6 +474,7 @@ public class RemoteBuildConfiguration extends Builder {
             this.failBuild(new Exception("No remote host is defined for this job."), listener);
             return true;
         }
+        // Use the load balancer IP for first call
         String remoteServerURL = remoteServer.getAddress().toString();
         List<String> cleanedParams = null;
 
@@ -485,14 +490,14 @@ public class RemoteBuildConfiguration extends Builder {
 
         String securityToken = replaceToken(build, listener, this.getToken());
 
-        boolean isRemoteParameterized = isRemoteJobParameterized(jobName, build, listener);
-        String triggerUrlString = this.buildTriggerUrl(jobName, securityToken, cleanedParams, isRemoteParameterized);
+        //boolean isRemoteParameterized = isRemoteJobParameterized(jobName, build, listener);
+        //String triggerUrlString = this.buildTriggerUrl(jobName, securityToken, cleanedParams, isRemoteParameterized);
 
         // Trigger remote job
         // print out some debugging information to the console
 
         //listener.getLogger().println("URL: " + triggerUrlString);
-        listener.getLogger().println("Triggering this remote job: " + jobName);
+        //listener.getLogger().println("Triggering this remote job: " + jobName);
 
         // get the ID of the Next Job to run.
         if (this.getPreventRemoteBuildQueue()) {
@@ -531,7 +536,7 @@ public class RemoteBuildConfiguration extends Builder {
         String queryUrlString = this.buildGetUrl(jobName, securityToken);
         queryUrlString += "/api/json/";
 
-        //listener.getLogger().println("Getting ID of next job to build. URL: " + queryUrlString);
+        listener.getLogger().println("Getting ID of next job to build. URL: " + queryUrlString);
         JSONObject queryResponseObject = sendHTTPCall(queryUrlString, "GET", build, listener);
         if (queryResponseObject == null ) {
             //This should not happen as this page should return a JSON object
@@ -540,15 +545,26 @@ public class RemoteBuildConfiguration extends Builder {
         
         int nextBuildNumber = queryResponseObject.getInt("nextBuildNumber");
 
+        // Make sure we perform all HTTP requests against the same server for this instance
+        String strRemoteUrl =  queryResponseObject.getString("url");
+        this.setRemoteServerUrl(strRemoteUrl);
+        listener.getLogger().println("Stick to this remote url: " + this.getRemoteServerUrl());
+
         if (this.getOverrideAuth()) {
             listener.getLogger().println(
                     "Using job-level defined credentails in place of those from remote Jenkins config ["
                             + this.getRemoteJenkinsName() + "]");
         }
 
-        listener.getLogger().println("Triggering remote job now.");
+        boolean isRemoteParameterized = isRemoteJobParameterized(jobName, build, listener);
+        String triggerUrlString = this.buildTriggerUrl(jobName, securityToken, cleanedParams, isRemoteParameterized);
+
+        listener.getLogger().println("Triggering remote job now - " + triggerUrlString);
+
         sendHTTPCall(triggerUrlString, "POST", build, listener);
+
         // Validate the build number via parameters
+        /** CICD-3015: trust the nextBuildNumber that came back from the api call
         foundIt: for (int tries = 3; tries > 0; tries--) {
             for (int buildNumber : new SearchPattern(nextBuildNumber, 2)) {
                 listener.getLogger().println("Checking parameters of #" + buildNumber);
@@ -584,11 +600,16 @@ public class RemoteBuildConfiguration extends Builder {
                 }
             }
         }
+        **/
+
         listener.getLogger().println("This job is build #[" + Integer.toString(nextBuildNumber) + "] on the remote server.");
         BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, nextBuildNumber, Result.NOT_BUILT);
-        
-        //Have to form the string ourselves, as we might not get a response from non-parameterized builds
-        String jobURL = remoteServerURL + "/job/" + this.encodeValue(jobName) + "/";
+
+        // Ensure we hit the same server with each request.
+        // Use the url that was returned back from the api call.
+        String jobURL = strRemoteUrl;
+
+        listener.getLogger().println("Remote job URL link: " + jobURL + Integer.toString(nextBuildNumber)); //useful when the job fails you can just click on link
 
         // This is only for Debug
         // This output whether there is another job running on the remote host that this job had conflicted with.
@@ -631,22 +652,29 @@ public class RemoteBuildConfiguration extends Builder {
             }
 
             listener.getLogger().println("Remote build started!");
+            String buildStreamUrl = this.getBuildUrl(jobLocation, build, listener);
+            Integer intStart = 1;
             while (buildStatusStr.equals("running")) {
-                listener.getLogger().println("Waiting for remote build to finish.");
-                listener.getLogger().println("Waiting for " + this.pollInterval + " seconds until next poll.");
                 buildStatusStr = getBuildStatus(jobLocation, build, listener);
                 // Sleep for 'pollInterval' seconds.
                 // Sleep takes miliseconds so need to convert this.pollInterval to milisecopnds (x 1000)
                 try {
                     // Could do with a better way of sleeping...
-                    Thread.sleep(this.pollInterval * 1000);
+                    if (this.getEnhancedLogging()) {
+                        Thread.sleep(5 * 1000);
+                        intStart = this.streamRemoteConsoleOutput(buildStreamUrl, "GET", build, listener, intStart);
+                    } else {
+                        Thread.sleep(this.pollInterval * 1000);
+                        listener.getLogger().println("Waiting for remote build to finish.");
+                        listener.getLogger().println("Waiting for " + this.pollInterval + " seconds until next poll.");
+                    }
                 } catch (InterruptedException e) {
                     this.failBuild(e, listener);
                 }
             }
             listener.getLogger().println("Remote build finished with status " + buildStatusStr + ".");
             BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, nextBuildNumber, Result.fromString(buildStatusStr));
-
+/** Stream console log instead
             if (this.getEnhancedLogging()) {
                 String buildUrl = getBuildUrl(jobLocation, build, listener);
                 String consoleOutput = getConsoleOutput(buildUrl, "GET", build, listener);
@@ -657,6 +685,7 @@ public class RemoteBuildConfiguration extends Builder {
                 listener.getLogger().println(consoleOutput);
                 listener.getLogger().println("--------------------------------------------------------------------------------");
             }
+**/
 
             // If build did not finish with 'success' then fail build step.
             if (!buildStatusStr.equals("SUCCESS")) {
@@ -716,11 +745,11 @@ public class RemoteBuildConfiguration extends Builder {
 
         // print out some debugging information to the console
         //listener.getLogger().println("Checking Status of this job: " + buildUrlString);
-        if (this.getOverrideAuth()) {
-            listener.getLogger().println(
-                    "Using job-level defined credentails in place of those from remote Jenkins config ["
-                            + this.getRemoteJenkinsName() + "]");
-        }
+//        if (this.getOverrideAuth()) {
+//            listener.getLogger().println(
+//                    "Using job-level defined credentails in place of those from remote Jenkins config ["
+//                            + this.getRemoteJenkinsName() + "]");
+//        }
 
         JSONObject responseObject = sendHTTPCall(buildUrlString, "GET", build, listener);
 
@@ -803,7 +832,7 @@ public class RemoteBuildConfiguration extends Builder {
             throws IOException {
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
         int retryLimit = this.getConnectionRetryLimit();
-        
+
         if (remoteServer == null) {
             this.failBuild(new Exception("No remote host is defined for this job."), listener);
             return null;
@@ -860,12 +889,32 @@ public class RemoteBuildConfiguration extends Builder {
             String line;
             // String response = "";
             StringBuilder response = new StringBuilder();
-        
+
+            Integer intJobNameIdx = -1;
+            Integer intJobNumberIdx = -1;
+            Integer intCompletedIdx = -1;
+            String strDownstreamJobName = null;
+            String strJobNumber = null;
+
             while ((line = rd.readLine()) != null) {
                 response.append(line+"\n");
+                intJobNameIdx = line.indexOf(this.strWaitMessage);
+                if (intJobNameIdx != -1) {
+                    strDownstreamJobName = line.substring(intJobNameIdx + this.strWaitMessage.length()).trim();
+                }
+                if (strDownstreamJobName != null) {
+                    intJobNumberIdx = line.indexOf(strDownstreamJobName + " #");
+                    if (intJobNumberIdx != -1) {
+                        intCompletedIdx = line.indexOf(" completed");
+                        if (intCompletedIdx != -1) {
+                            strJobNumber = line.substring(intJobNumberIdx + strDownstreamJobName.length() + 2, intCompletedIdx);
+                            response.append(this.getRemoteServerUrl()).append("/job/");
+                            response.append(strDownstreamJobName).append('/').append(strJobNumber).append('/').append("\n");
+                        }
+                    }
+                }
             }
             rd.close();
-            
 
             consoleOutput = response.toString();
         } catch (IOException e) {
@@ -1156,8 +1205,9 @@ public class RemoteBuildConfiguration extends Builder {
         boolean isParameterized = false;
         
         //build the proper URL to inspect the remote job
-        RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
-        String remoteServerUrl = remoteServer.getAddress().toString();
+        //RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
+        //String remoteServerUrl = remoteServer.getAddress().toString();
+        String remoteServerUrl = this.getRemoteServerUrl();
         remoteServerUrl += "/job/" + encodeValue(jobName);
         remoteServerUrl += "/api/json";
         
@@ -1206,6 +1256,148 @@ public class RemoteBuildConfiguration extends Builder {
      */
     private void clearQueryString() {
         this.setQueryString("");
+    }
+
+    /**
+     * This method returns the remote server url.  Defaults to url in config if it has not been set.
+     */
+    public String getRemoteServerUrl() {
+        String strUrl = this.strRemoteServerUrl;
+        if (strUrl == null) {
+            // Remote server url has not been set.  Default to url in config.
+            RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
+            strUrl = remoteServer.getAddress().toString();
+        }
+        return strUrl;
+    }
+
+    /**
+     * This method persists the remote server url so that all requests can stick to this server.
+     */
+    private void setRemoteServerUrl(String strUrl) {
+        Integer intJob = strUrl.indexOf("/job");
+        if (intJob != -1) {
+            this.strRemoteServerUrl = strUrl.substring(0, intJob);
+        }
+    }
+
+    /**
+     * This method streams the console output from the remote server based upon the passed in line number offset.
+     */
+    private Integer streamRemoteConsoleOutput(String urlString, String requestType, AbstractBuild build, BuildListener listener, int intStart)
+            throws IOException {
+
+        RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
+
+        if (remoteServer == null) {
+            this.failBuild(new Exception("No remote host is defined for this job."), listener);
+            return null;
+        }
+
+        HttpURLConnection connection = null;
+
+        URL buildUrl = new URL(urlString+"consoleText");
+        connection = (HttpURLConnection) buildUrl.openConnection();
+
+        // if there is a username + apiToken defined for this remote host, then use it
+        String usernameTokenConcat;
+
+        if (this.getOverrideAuth()) {
+            usernameTokenConcat = this.getAuth()[0].getUsername() + ":" + this.getAuth()[0].getPassword();
+        } else {
+            usernameTokenConcat = remoteServer.getAuth()[0].getUsername() + ":"
+                    + remoteServer.getAuth()[0].getPassword();
+        }
+
+        if (!usernameTokenConcat.equals(":")) {
+            // token-macro replacment
+            try {
+                usernameTokenConcat = TokenMacro.expandAll(build, listener, usernameTokenConcat);
+            } catch (MacroEvaluationException e) {
+                this.failBuild(e, listener);
+            } catch (InterruptedException e) {
+                this.failBuild(e, listener);
+            }
+
+            byte[] encodedAuthKey = Base64.encodeBase64(usernameTokenConcat.getBytes());
+            connection.setRequestProperty("Authorization", "Basic " + new String(encodedAuthKey));
+        }
+
+        try {
+            connection.setDoInput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestMethod(requestType);
+            // wait up to 5 seconds for the connection to be open
+            connection.setConnectTimeout(5000);
+            connection.connect();
+
+            InputStream is;
+            try {
+                is = connection.getInputStream();
+            } catch (FileNotFoundException e) {
+                // In case of a e.g. 404 status
+                is = connection.getErrorStream();
+            }
+
+            BufferedReader rd = new BufferedReader(new InputStreamReader(is));
+            String line;
+            // String response = "";
+            StringBuilder response = new StringBuilder();
+
+            Integer intJobNameIdx = -1;
+            Integer intJobNumberIdx = -1;
+            Integer intCompletedIdx = -1;
+            String strDownstreamJobName = null;
+            String strJobNumber = null;
+
+            if (intStart == 1) {
+                listener.getLogger().println("*** Streaming console output from remote job - " + urlString + "/console");
+            }
+
+            Integer intLineCount = 1;
+            while ((line = rd.readLine()) != null) {
+                if (intLineCount >= intStart) {
+                    listener.getLogger().println(line);
+
+                    // Dynamically build link to downstream job
+                    intJobNameIdx = line.indexOf(this.strWaitMessage);
+                    if (intJobNameIdx != -1) {
+                        strDownstreamJobName = line.substring(intJobNameIdx + this.strWaitMessage.length()).trim();
+                    }
+                    if (strDownstreamJobName != null) {
+                        intJobNumberIdx = line.indexOf(strDownstreamJobName + " #");
+                        if (intJobNumberIdx != -1) {
+                            intCompletedIdx = line.indexOf(" completed");
+                            if (intCompletedIdx != -1) {
+                                strJobNumber = line.substring(intJobNumberIdx + strDownstreamJobName.length() + 2, intCompletedIdx);
+                                response.append(this.getRemoteServerUrl()).append("/job/");
+                                response.append(strDownstreamJobName).append('/').append(strJobNumber).append('/').append("\n");
+                                listener.getLogger().println("*** Access remote job " + strDownstreamJobName + ": " + response.toString());
+
+                                listener.getLogger().println();
+                                listener.getLogger().println("Console output for remote job " + strDownstreamJobName + ":");
+                                listener.getLogger().println("--------------------------------------------------------------------------------");
+                                listener.getLogger().println(getConsoleOutput(response.toString(), "GET", build, listener));
+                                listener.getLogger().println("--------------------------------------------------------------------------------");
+                            }
+                        }
+                    }
+                }
+                intLineCount++;
+            }
+            rd.close();
+            intStart = intLineCount;
+        } catch (IOException e) {
+             listener.getLogger().println("IOException attempting to stream console output");
+        } finally {
+            // always make sure we close the connection
+            if (connection != null) {
+                connection.disconnect();
+            }
+            // and always clear the query string and remove some "global" values
+            this.clearQueryString();
+        }
+        return intStart;
     }
 
     // Overridden for better type safety.
