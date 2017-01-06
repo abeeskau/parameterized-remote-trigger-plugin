@@ -844,6 +844,7 @@ public class RemoteBuildConfiguration extends Builder {
         String consoleOutput = null;
 
         URL buildUrl = new URL(urlString+"consoleText");
+        listener.getLogger().println("Starting connection to get console output - " + buildUrl.toString());
         connection = (HttpURLConnection) buildUrl.openConnection();
 
         // if there is a username + apiToken defined for this remote host, then use it
@@ -1290,6 +1291,7 @@ public class RemoteBuildConfiguration extends Builder {
         HttpURLConnection connection = null;
 
         URL buildUrl = new URL(urlString+"consoleText");
+        listener.getLogger().println("Starting connection to stream console output - " + buildUrl.toString());
         connection = (HttpURLConnection) buildUrl.openConnection();
 
         // if there is a username + apiToken defined for this remote host, then use it
@@ -1364,7 +1366,7 @@ public class RemoteBuildConfiguration extends Builder {
                             if (intCompletedIdx != -1) {
                                 strJobNumber = line.substring(intJobNumberIdx + strJobName.length() + 2, intCompletedIdx);
                                 response.append(this.getRemoteServerUrl()).append("/job/");
-                                response.append(strJobName).append('/').append(strJobNumber).append('/').append("\n");
+                                response.append(strJobName).append('/').append(strJobNumber).append('/');
                                 listener.getLogger().println("*** Access remote job " + strJobName + ": " + response.toString());
 
                                 listener.getLogger().println();
