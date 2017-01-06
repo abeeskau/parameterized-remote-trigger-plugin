@@ -83,6 +83,7 @@ public class RemoteBuildConfiguration extends Builder {
     private String                queryString         = "";
 
     private String                strRemoteServerUrl  = null;
+    private String                strDownstreamJobName = null;
     private static String         strWaitMessage      = "Waiting for the completion of ";
 
     @DataBoundConstructor
@@ -889,30 +890,8 @@ public class RemoteBuildConfiguration extends Builder {
             String line;
             // String response = "";
             StringBuilder response = new StringBuilder();
-
-            Integer intJobNameIdx = -1;
-            Integer intJobNumberIdx = -1;
-            Integer intCompletedIdx = -1;
-            String strDownstreamJobName = null;
-            String strJobNumber = null;
-
             while ((line = rd.readLine()) != null) {
                 response.append(line+"\n");
-                intJobNameIdx = line.indexOf(this.strWaitMessage);
-                if (intJobNameIdx != -1) {
-                    strDownstreamJobName = line.substring(intJobNameIdx + this.strWaitMessage.length()).trim();
-                }
-                if (strDownstreamJobName != null) {
-                    intJobNumberIdx = line.indexOf(strDownstreamJobName + " #");
-                    if (intJobNumberIdx != -1) {
-                        intCompletedIdx = line.indexOf(" completed");
-                        if (intCompletedIdx != -1) {
-                            strJobNumber = line.substring(intJobNumberIdx + strDownstreamJobName.length() + 2, intCompletedIdx);
-                            response.append(this.getRemoteServerUrl()).append("/job/");
-                            response.append(strDownstreamJobName).append('/').append(strJobNumber).append('/').append("\n");
-                        }
-                    }
-                }
             }
             rd.close();
 
@@ -1261,7 +1240,7 @@ public class RemoteBuildConfiguration extends Builder {
     /**
      * This method returns the remote server url.  Defaults to url in config if it has not been set.
      */
-    public String getRemoteServerUrl() {
+    private String getRemoteServerUrl() {
         String strUrl = this.strRemoteServerUrl;
         if (strUrl == null) {
             // Remote server url has not been set.  Default to url in config.
@@ -1279,6 +1258,20 @@ public class RemoteBuildConfiguration extends Builder {
         if (intJob != -1) {
             this.strRemoteServerUrl = strUrl.substring(0, intJob);
         }
+    }
+
+    /**
+     * This method returns the downstream job name that was parsed from the console log.
+     */
+    private String getDownstreamJobName() {
+        return this.strDownstreamJobName;
+    }
+
+    /**
+     * This method persists the downstream job name that was parsed from the console log.
+     */
+    private void setDownstreamJobName(String strJobName) {
+        this.strDownstreamJobName = strJobName.trim();
     }
 
     /**
@@ -1347,7 +1340,6 @@ public class RemoteBuildConfiguration extends Builder {
             Integer intJobNameIdx = -1;
             Integer intJobNumberIdx = -1;
             Integer intCompletedIdx = -1;
-            String strDownstreamJobName = null;
             String strJobNumber = null;
 
             if (intStart == 1) {
@@ -1362,20 +1354,21 @@ public class RemoteBuildConfiguration extends Builder {
                     // Dynamically build link to downstream job
                     intJobNameIdx = line.indexOf(this.strWaitMessage);
                     if (intJobNameIdx != -1) {
-                        strDownstreamJobName = line.substring(intJobNameIdx + this.strWaitMessage.length()).trim();
+                        this.setDownstreamJobName(line.substring(intJobNameIdx + this.strWaitMessage.length()));
                     }
-                    if (strDownstreamJobName != null) {
-                        intJobNumberIdx = line.indexOf(strDownstreamJobName + " #");
+                    String strJobName = this.getDownstreamJobName();
+                    if (strJobName != null) {
+                        intJobNumberIdx = line.indexOf(strJobName + " #");
                         if (intJobNumberIdx != -1) {
                             intCompletedIdx = line.indexOf(" completed");
                             if (intCompletedIdx != -1) {
-                                strJobNumber = line.substring(intJobNumberIdx + strDownstreamJobName.length() + 2, intCompletedIdx);
+                                strJobNumber = line.substring(intJobNumberIdx + strJobName.length() + 2, intCompletedIdx);
                                 response.append(this.getRemoteServerUrl()).append("/job/");
-                                response.append(strDownstreamJobName).append('/').append(strJobNumber).append('/').append("\n");
-                                listener.getLogger().println("*** Access remote job " + strDownstreamJobName + ": " + response.toString());
+                                response.append(strJobName).append('/').append(strJobNumber).append('/').append("\n");
+                                listener.getLogger().println("*** Access remote job " + strJobName + ": " + response.toString());
 
                                 listener.getLogger().println();
-                                listener.getLogger().println("Console output for remote job " + strDownstreamJobName + ":");
+                                listener.getLogger().println("Console output for remote job " + strJobName + ":");
                                 listener.getLogger().println("--------------------------------------------------------------------------------");
                                 listener.getLogger().println(getConsoleOutput(response.toString(), "GET", build, listener));
                                 listener.getLogger().println("--------------------------------------------------------------------------------");
