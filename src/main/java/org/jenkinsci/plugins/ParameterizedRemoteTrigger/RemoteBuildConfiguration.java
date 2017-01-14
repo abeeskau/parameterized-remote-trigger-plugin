@@ -466,6 +466,9 @@ public class RemoteBuildConfiguration extends Builder {
     public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener) throws InterruptedException,
             IOException, IllegalArgumentException {
 
+        // Initialize remote server url.  Ensure initial request uses the load balancer.
+        this.setRemoteServerUrl(null);
+
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
 
         // Stores the status of the remote build
@@ -1254,9 +1257,14 @@ public class RemoteBuildConfiguration extends Builder {
      * This method persists the remote server url so that all requests can stick to this server.
      */
     private void setRemoteServerUrl(String strUrl) {
-        Integer intJob = strUrl.indexOf("/job");
-        if (intJob != -1) {
-            this.strRemoteServerUrl = strUrl.substring(0, intJob);
+        if (strUrl != null) {
+            Integer intJob = strUrl.indexOf("/job");
+            if (intJob != -1) {
+                this.strRemoteServerUrl = strUrl.substring(0, intJob);
+            }
+        } else {
+            // Assume the caller wants to re-initialize remote server url
+            this.strRemoteServerUrl = null;
         }
     }
 
