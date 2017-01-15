@@ -1373,13 +1373,14 @@ public class RemoteBuildConfiguration extends Builder {
                                 strJobNumber = line.substring(intJobNumberIdx + strJobName.length() + 2, intCompletedIdx);
                                 response.append(this.getRemoteServerUrl()).append("/job/");
                                 response.append(strJobName).append('/').append(strJobNumber).append('/');
-                                listener.getLogger().println("*** Access remote job " + strJobName + ": " + response.toString());
 
                                 listener.getLogger().println();
                                 listener.getLogger().println("Console output for remote job " + strJobName + ":");
                                 listener.getLogger().println("--------------------------------------------------------------------------------");
                                 listener.getLogger().println(getConsoleOutput(response.toString(), "GET", build, listener));
                                 listener.getLogger().println("--------------------------------------------------------------------------------");
+                                listener.getLogger().println();
+                                listener.getLogger().println("*** Access remote job " + strJobName + ": " + response.toString());
                             }
                         }
                     }
