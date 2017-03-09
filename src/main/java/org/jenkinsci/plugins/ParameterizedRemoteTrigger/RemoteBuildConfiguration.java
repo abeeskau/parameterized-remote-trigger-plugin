@@ -41,14 +41,15 @@ import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 
 import org.apache.commons.codec.binary.Base64;
 
 /**
- * 
+ *
  * @author Maurice W.
- * 
+ *
  */
 public class RemoteBuildConfiguration extends Builder {
 
@@ -82,8 +83,9 @@ public class RemoteBuildConfiguration extends Builder {
 
     private String                queryString         = "";
 
-    private String                strRemoteServerUrl  = null;
+    private static HashMap<String, String> hmapRemoteServerUrl = new HashMap<String, String>();
     private String                strDownstreamJobName = null;
+
     private static String         strWaitMessage      = "Waiting for the completion of ";
 
     @DataBoundConstructor
@@ -127,7 +129,6 @@ public class RemoteBuildConfiguration extends Builder {
 
         // convert the String array into a List of Strings, and remove any empty entries
         this.parameterList = new ArrayList<String>(Arrays.asList(params));
-
     }
 
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild,
@@ -153,13 +154,12 @@ public class RemoteBuildConfiguration extends Builder {
 
         // convert the String array into a List of Strings, and remove any empty entries
         this.parameterList = new ArrayList<String>(Arrays.asList(params));
-
     }
 
     /**
      * Reads a file from the jobs workspace, and loads the list of parameters from with in it. It will also call
      * ```getCleanedParameters``` before returning.
-     * 
+     *
      * @param build
      * @return List<String> of build parameters
      */
@@ -209,7 +209,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Convenience method
-     * 
+     *
      * @return List<String> of build parameters
      */
     private List<String> getCleanedParameters() {
@@ -220,7 +220,7 @@ public class RemoteBuildConfiguration extends Builder {
     /**
      * Same as "getParameterList", but removes comments and empty strings Notice that no type of character encoding is
      * happening at this step. All encoding happens in the "buildUrlQueryString" method.
-     * 
+     *
      * @param List
      *            <String> parameters
      * @return List<String> of build parameters
@@ -234,7 +234,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Similar to "replaceToken", but acts on a list in place of just a single string
-     * 
+     *
      * @param build
      * @param listener
      * @param params
@@ -254,7 +254,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Resolves any environment variables in the string
-     * 
+     *
      * @param build
      * @param listener
      * @param input
@@ -288,7 +288,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Return the Collection<String> in an encoded query-string
-     * 
+     *
      * @return query-parameter-formated URL-encoded string
      * @throws InterruptedException
      * @throws IOException
@@ -328,7 +328,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Lookup up a Remote Jenkins Server based on display name
-     * 
+     *
      * @param displayName
      *            Name of the configuration you are looking for
      * @return A RemoteSitez object
@@ -349,7 +349,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Helper function to allow values to be added to the query string from any method.
-     * 
+     *
      * @param item
      */
     private void addToQueryString(String item) {
@@ -366,10 +366,10 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Build the proper URL to trigger the remote build
-     * 
+     *
      * All passed in string have already had their tokens replaced with real values. All 'params' also have the proper
      * character encoding
-     * 
+     *
      * @param job
      *            Name of the remote job
      * @param securityToken
@@ -378,10 +378,10 @@ public class RemoteBuildConfiguration extends Builder {
      *            Parameters for the remote job
      * @return fully formed, fully qualified remote trigger URL
      */
-    private String buildTriggerUrl(String job, String securityToken, Collection<String> params, boolean isRemoteJobParameterized) {
+    private String buildTriggerUrl(String job, String securityToken, Collection<String> params, boolean isRemoteJobParameterized, String remoteServerJobKey) {
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
         //String triggerUrlString = remoteServer.getAddress().toString();
-        String triggerUrlString = this.getRemoteServerUrl();
+        String triggerUrlString = this.getRemoteServerUrl(remoteServerJobKey);
 
         // start building the proper URL based on known capabiltiies of the remote server
         if (remoteServer.getHasBuildTokenRootSupport()) {
@@ -418,19 +418,19 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Build the proper URL for GET calls
-     * 
+     *
      * All passed in string have already had their tokens replaced with real values.
-     * 
+     *
      * @param job
      *            Name of the remote job
      * @param securityToken
      *            Security token used to trigger remote job
      * @return fully formed, fully qualified remote trigger URL
      */
-    private String buildGetUrl(String job, String securityToken) {
+    private String buildGetUrl(String job, String securityToken, String remoteServerJobKey) {
         //RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
         //String urlString = remoteServer.getAddress().toString();
-        String urlString = this.getRemoteServerUrl();
+        String urlString = this.getRemoteServerUrl(remoteServerJobKey);
 
         urlString += "/job/";
         urlString += this.encodeValue(job);
@@ -444,7 +444,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Convenience function to mark the build as failed. It's intended to only be called from this.perform();
-     * 
+     *
      * @param e
      *            Exception that caused the build to fail
      * @param listener
@@ -466,8 +466,16 @@ public class RemoteBuildConfiguration extends Builder {
     public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener) throws InterruptedException,
             IOException, IllegalArgumentException {
 
+        // Keep track of all requests by build number and job name.
+        EnvVars envVars = new EnvVars();
+        envVars = build.getEnvironment(listener);
+        String upstreamBuildNumber = envVars.get("BUILD_NUMBER");
+        String upstreamJobName = envVars.get("JOB_NAME");
+        String remoteServerJobKey = upstreamBuildNumber + ':' + upstreamJobName;
+        listener.getLogger().println("Build number and job=" + remoteServerJobKey);
+
         // Initialize remote server url.  Ensure initial request uses the load balancer.
-        this.setRemoteServerUrl(null);
+        this.setRemoteServerUrl(remoteServerJobKey, null);
 
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
 
@@ -506,11 +514,11 @@ public class RemoteBuildConfiguration extends Builder {
         // get the ID of the Next Job to run.
         if (this.getPreventRemoteBuildQueue()) {
             listener.getLogger().println("Checking that the remote job " + jobName + " is not currently building.");
-            String preCheckUrlString = this.buildGetUrl(jobName, securityToken);
+            String preCheckUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey);
             preCheckUrlString += "/lastBuild";
             preCheckUrlString += "/api/json/";
             JSONObject preCheckResponse = sendHTTPCall(preCheckUrlString, "GET", build, listener);
-            
+
             if ( preCheckResponse != null ) {
                 // check the latest build on the remote server to see if it's running - if so wait until it has stopped.
                 // if building is true then the build is running
@@ -528,7 +536,7 @@ public class RemoteBuildConfiguration extends Builder {
                         this.failBuild(e, listener);
                     }
                 }
-                listener.getLogger().println("Remote job remote job " + jobName + " is not currenlty building.");    
+                listener.getLogger().println("Remote job remote job " + jobName + " is not currenlty building.");
             } else {
                 this.failBuild(new Exception("Got a blank response from Remote Jenkins Server, cannot continue."), listener);
             }
@@ -537,7 +545,7 @@ public class RemoteBuildConfiguration extends Builder {
             listener.getLogger().println("Not checking if the remote job " + jobName + " is building.");
         }
 
-        String queryUrlString = this.buildGetUrl(jobName, securityToken);
+        String queryUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey);
         queryUrlString += "/api/json/";
 
         listener.getLogger().println("Getting ID of next job to build. URL: " + queryUrlString);
@@ -546,13 +554,13 @@ public class RemoteBuildConfiguration extends Builder {
             //This should not happen as this page should return a JSON object
             this.failBuild(new Exception("Got a blank response from Remote Jenkins Server [" + remoteServerURL + "], cannot continue."), listener);
         }
-        
+
         int nextBuildNumber = queryResponseObject.getInt("nextBuildNumber");
 
         // Make sure we perform all HTTP requests against the same server for this instance
         String strRemoteUrl =  queryResponseObject.getString("url");
-        this.setRemoteServerUrl(strRemoteUrl);
-        listener.getLogger().println("Stick to this remote url: " + this.getRemoteServerUrl());
+        this.setRemoteServerUrl(remoteServerJobKey, strRemoteUrl);
+        listener.getLogger().println("Stick to this remote url: " + this.getRemoteServerUrl(remoteServerJobKey));
 
         if (this.getOverrideAuth()) {
             listener.getLogger().println(
@@ -560,19 +568,23 @@ public class RemoteBuildConfiguration extends Builder {
                             + this.getRemoteJenkinsName() + "]");
         }
 
-        boolean isRemoteParameterized = isRemoteJobParameterized(jobName, build, listener);
-        String triggerUrlString = this.buildTriggerUrl(jobName, securityToken, cleanedParams, isRemoteParameterized);
+        boolean isRemoteParameterized = isRemoteJobParameterized(jobName, build, listener, remoteServerJobKey);
+        String triggerUrlString = this.buildTriggerUrl(jobName, securityToken, cleanedParams, isRemoteParameterized, remoteServerJobKey);
 
         listener.getLogger().println("Triggering remote job now - " + triggerUrlString);
 
         sendHTTPCall(triggerUrlString, "POST", build, listener);
 
+        // Give the remote job a chance to get kicked off before validating parameters
+        listener.getLogger().println("Give the remote job a chance to kick off before validating parameters...");
+        Thread.sleep(5 * 1000);
+
         // Validate the build number via parameters
-        /** CICD-3015: trust the nextBuildNumber that came back from the api call
         foundIt: for (int tries = 3; tries > 0; tries--) {
             for (int buildNumber : new SearchPattern(nextBuildNumber, 2)) {
                 listener.getLogger().println("Checking parameters of #" + buildNumber);
-                String validateUrlString = this.buildGetUrl(jobName, securityToken) + "/" + buildNumber + "/api/json/";
+                // Use the 'tree' parameter on query-string to limit the response to what we are looking for
+                String validateUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey) + "/" + buildNumber + "/api/json/?tree=actions[parameters[name,value]]";
                 JSONObject validateResponse = sendHTTPCall(validateUrlString, "GET", build, listener);
                 if (validateResponse == null) {
                     listener.getLogger().println("Query failed.");
@@ -584,10 +596,11 @@ public class RemoteBuildConfiguration extends Builder {
                     if (!action.has("parameters")) continue;
                     JSONArray parameters = action.getJSONArray("parameters");
                     // Check if the parameters match
-                    if (compareParameters(listener, parameters, cleanedParams)) {
+                    //if (compareParameters(listener, parameters, cleanedParams)) {
                         // We now have a very high degree of confidence that this is the correct build.
                         // It is still possible that this is a false positive if there are no parameters,
                         // or multiple jobs use the same parameters.
+                    if (compareUpstreamParameters(build, listener, parameters, upstreamBuildNumber, upstreamJobName)) {
                         nextBuildNumber = buildNumber;
                         break foundIt;
                     }
@@ -604,7 +617,6 @@ public class RemoteBuildConfiguration extends Builder {
                 }
             }
         }
-        **/
 
         listener.getLogger().println("This job is build #[" + Integer.toString(nextBuildNumber) + "] on the remote server.");
         BuildInfoExporterAction.addBuildInfoExporterAction(build, jobName, nextBuildNumber, Result.NOT_BUILT);
@@ -666,7 +678,7 @@ public class RemoteBuildConfiguration extends Builder {
                     // Could do with a better way of sleeping...
                     if (this.getEnhancedLogging()) {
                         Thread.sleep(5 * 1000);
-                        intStart = this.streamRemoteConsoleOutput(buildStreamUrl, "GET", build, listener, intStart);
+                        intStart = this.streamRemoteConsoleOutput(buildStreamUrl, "GET", build, listener, intStart, remoteServerJobKey);
                     } else {
                         Thread.sleep(this.pollInterval * 1000);
                         listener.getLogger().println("Waiting for remote build to finish.");
@@ -735,6 +747,51 @@ public class RemoteBuildConfiguration extends Builder {
         }
         // All found parameters matched. This if there are no uniquely identifying parameters, this could still be a false positive.
         return true;
+    }
+
+    /**
+     * This method compares the parameters of specific hidden parameters that were set on the remote job.
+     * This will allow logic to definitively identify the job on the remote server.
+     **/
+    private boolean compareUpstreamParameters(AbstractBuild build, BuildListener listener, JSONArray parameters, String upstreamBuildNumber, String upstreamJobName) throws InterruptedException,
+                IOException {
+        boolean foundJob = false;
+        boolean jobNameMatch = false;
+        boolean buildNumberMatch = false;
+
+        listener.getLogger().println("Comparing upstream parameters=" + upstreamBuildNumber + ":" + upstreamJobName);
+
+        for (int j = 0; j < parameters.size(); j++) {
+            JSONObject parameter = parameters.getJSONObject(j);
+            String name = parameter.getString("name");
+            if (name.startsWith("UPSTREAM_")) {
+                // We only care about the hidden parameters that confidently identify the remote job.
+                String value = parameter.getString("value");
+                if (name.equals("UPSTREAM_JOB_NAME")) {
+                    if (value.equals(upstreamJobName)) {
+                        jobNameMatch = true;
+                    } else {
+                        continue;
+                    }
+                } else if (name.equals("UPSTREAM_BUILD_NUMBER")) {
+                    if (value.equals(upstreamBuildNumber)) {
+                        buildNumberMatch = true;
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+                if (jobNameMatch && buildNumberMatch) {
+                    listener.getLogger().println("Found upstream job!");
+                    foundJob = true;
+                    j = parameters.size();
+                }
+            } else {
+                continue;
+            }
+        }
+        return foundJob;
     }
 
     public String getBuildStatus(String buildUrlString, AbstractBuild build, BuildListener listener) throws IOException {
@@ -811,14 +868,14 @@ public class RemoteBuildConfiguration extends Builder {
 
     public String getConsoleOutput(String urlString, String requestType, AbstractBuild build, BuildListener listener)
             throws IOException {
-        
+
             return getConsoleOutput( urlString, requestType, build, listener, 1 );
     }
 
     /**
      * Orchestrates all calls to the remote server.
      * Also takes care of any credentials or failed-connection retries.
-     * 
+     *
      * @param urlString     the URL that needs to be called
      * @param requestType   the type of request (GET, POST, etc)
      * @param build         the build that is being triggered
@@ -828,7 +885,7 @@ public class RemoteBuildConfiguration extends Builder {
      */
     public JSONObject sendHTTPCall(String urlString, String requestType, AbstractBuild build, BuildListener listener)
             throws IOException {
-        
+
             return sendHTTPCall( urlString, requestType, build, listener, 1 );
     }
 
@@ -880,7 +937,7 @@ public class RemoteBuildConfiguration extends Builder {
             // wait up to 5 seconds for the connection to be open
             connection.setConnectTimeout(5000);
             connection.connect();
-            
+
             InputStream is;
             try {
                 is = connection.getInputStream();
@@ -888,7 +945,7 @@ public class RemoteBuildConfiguration extends Builder {
                 // In case of a e.g. 404 status
                 is = connection.getErrorStream();
             }
-            
+
             BufferedReader rd = new BufferedReader(new InputStreamReader(is));
             String line;
             // String response = "";
@@ -900,12 +957,12 @@ public class RemoteBuildConfiguration extends Builder {
 
             consoleOutput = response.toString();
         } catch (IOException e) {
-            
+
             //If we have connectionRetryLimit set to > 0 then retry that many times.
             if( numberOfAttempts <= retryLimit) {
                 listener.getLogger().println("Connection to remote server failed, waiting for to retry - " + this.pollInterval + " seconds until next attempt.");
                 e.printStackTrace();
-                
+
                 // Sleep for 'pollInterval' seconds.
                 // Sleep takes miliseconds so need to convert this.pollInterval to milisecopnds (x 1000)
                 try {
@@ -915,7 +972,7 @@ public class RemoteBuildConfiguration extends Builder {
                     this.failBuild(ex, listener);
                 }
 
- 
+
                 listener.getLogger().println("Retry attempt #" + numberOfAttempts + " out of " + retryLimit );
                 numberOfAttempts++;
                 consoleOutput = getConsoleOutput(urlString, requestType, build, listener, numberOfAttempts);
@@ -926,7 +983,7 @@ public class RemoteBuildConfiguration extends Builder {
                 //something failed with the connection and we retried the max amount of times... so throw an exception to mark the build as failed.
                 this.failBuild(e, listener);
             }
-            
+
         } finally {
             // always make sure we close the connection
             if (connection != null) {
@@ -945,7 +1002,7 @@ public class RemoteBuildConfiguration extends Builder {
      * Same as sendHTTPCall, but keeps track of the number of failed connection attempts (aka: the number of times this
      * method has been called).
      * In the case of a failed connection, the method calls it self recursively and increments  numberOfAttempts
-     * 
+     *
      * @see sendHTTPCall
      * @param numberOfAttempts  number of time that the connection has been attempted
      * @return
@@ -955,7 +1012,7 @@ public class RemoteBuildConfiguration extends Builder {
             throws IOException {
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
         int retryLimit = this.getConnectionRetryLimit();
-        
+
         if (remoteServer == null) {
             this.failBuild(new Exception("No remote host is defined for this job."), listener);
             return null;
@@ -999,7 +1056,7 @@ public class RemoteBuildConfiguration extends Builder {
             // wait up to 5 seconds for the connection to be open
             connection.setConnectTimeout(5000);
             connection.connect();
-            
+
             InputStream is;
             try {
                 is = connection.getInputStream();
@@ -1007,17 +1064,17 @@ public class RemoteBuildConfiguration extends Builder {
                 // In case of a e.g. 404 status
                 is = connection.getErrorStream();
             }
-            
+
             BufferedReader rd = new BufferedReader(new InputStreamReader(is));
             String line;
             // String response = "";
             StringBuilder response = new StringBuilder();
-        
+
             while ((line = rd.readLine()) != null) {
                 response.append(line);
             }
             rd.close();
-            
+
             // JSONSerializer serializer = new JSONSerializer();
             // need to parse the data we get back into struct
             //listener.getLogger().println("Called URL: '" + urlString +  "', got response: '" + response.toString() + "'");
@@ -1039,7 +1096,7 @@ public class RemoteBuildConfiguration extends Builder {
             if( numberOfAttempts <= retryLimit) {
                 listener.getLogger().println("Connection to remote server failed, waiting for to retry - " + this.pollInterval + " seconds until next attempt.");
                 e.printStackTrace();
-                
+
                 // Sleep for 'pollInterval' seconds.
                 // Sleep takes miliseconds so need to convert this.pollInterval to milisecopnds (x 1000)
                 try {
@@ -1049,7 +1106,7 @@ public class RemoteBuildConfiguration extends Builder {
                     this.failBuild(ex, listener);
                 }
 
- 
+
                 listener.getLogger().println("Retry attempt #" + numberOfAttempts + " out of " + retryLimit );
                 numberOfAttempts++;
                 responseObject = sendHTTPCall(urlString, requestType, build, listener, numberOfAttempts);
@@ -1060,7 +1117,7 @@ public class RemoteBuildConfiguration extends Builder {
                 //something failed with the connection and we retried the max amount of times... so throw an exception to mark the build as failed.
                 this.failBuild(e, listener);
             }
-            
+
         } finally {
             // always make sure we close the connection
             if (connection != null) {
@@ -1077,7 +1134,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     /**
      * Helper function for character encoding
-     * 
+     *
      * @param dirtyValue
      * @return encoded value
      */
@@ -1137,13 +1194,13 @@ public class RemoteBuildConfiguration extends Builder {
     public boolean getLoadParamsFromFile() {
         return this.loadParamsFromFile;
     }
-    
+
     public String getParameterFile() {
         return this.parameterFile;
     }
 
     /**
-     * Based on the number of parameters set (and only on params set), returns the proper URL string 
+     * Based on the number of parameters set (and only on params set), returns the proper URL string
      * @return A string which represents a portion of the build URL
      */
     private String getBuildTypeUrl() {
@@ -1155,7 +1212,7 @@ public class RemoteBuildConfiguration extends Builder {
             return RemoteBuildConfiguration.normalBuildUrl;
         }
     }
-    
+
     /**
      * Same as above, but takes in to consideration if the remote server has any default parameters set or not
      * @param isRemoteJobParameterized Boolean indicating if the remote job is parameterized or not
@@ -1163,7 +1220,7 @@ public class RemoteBuildConfiguration extends Builder {
      */
     private String getBuildTypeUrl(boolean isRemoteJobParameterized) {
         boolean isParameterized = false;
-        
+
         if(isRemoteJobParameterized || (this.getParameters().length() > 0)) {
             isParameterized = true;
         }
@@ -1174,37 +1231,37 @@ public class RemoteBuildConfiguration extends Builder {
             return RemoteBuildConfiguration.normalBuildUrl;
         }
     }
-    
+
     /**
      * Pokes the remote server to see if it has default parameters defined or not.
-     * 
+     *
      * @param jobName Name of the remote job to test
      * @param build Build object
      * @param listener listner object
      * @return true if the remote job has default parameters set, otherwise false
      */
-    private boolean isRemoteJobParameterized(String jobName, AbstractBuild build, BuildListener listener) {
+    private boolean isRemoteJobParameterized(String jobName, AbstractBuild build, BuildListener listener, String remoteServerJobKey) {
         boolean isParameterized = false;
-        
+
         //build the proper URL to inspect the remote job
         //RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
         //String remoteServerUrl = remoteServer.getAddress().toString();
-        String remoteServerUrl = this.getRemoteServerUrl();
+        String remoteServerUrl = this.getRemoteServerUrl(remoteServerJobKey);
         remoteServerUrl += "/job/" + encodeValue(jobName);
         remoteServerUrl += "/api/json";
-        
+
         try {
             JSONObject response = sendHTTPCall(remoteServerUrl, "GET", build, listener);
 
             if(response.getJSONArray("actions").size() >= 1){
                 isParameterized = true;
             }
-            
+
         } catch (IOException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
         }
-        
+
         return isParameterized;
     }
 
@@ -1243,10 +1300,10 @@ public class RemoteBuildConfiguration extends Builder {
     /**
      * This method returns the remote server url.  Defaults to url in config if it has not been set.
      */
-    private String getRemoteServerUrl() {
-        String strUrl = this.strRemoteServerUrl;
+    private String getRemoteServerUrl(String remoteServerJobKey) {
+        String strUrl = this.hmapRemoteServerUrl.get(remoteServerJobKey);
         if (strUrl == null) {
-            // Remote server url has not been set.  Default to url in config.
+            // Remote server url has not been set for this job key.  Default to url in config.
             RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
             strUrl = remoteServer.getAddress().toString();
         }
@@ -1256,15 +1313,16 @@ public class RemoteBuildConfiguration extends Builder {
     /**
      * This method persists the remote server url so that all requests can stick to this server.
      */
-    private void setRemoteServerUrl(String strUrl) {
-        if (strUrl != null) {
-            Integer intJob = strUrl.indexOf("/job");
-            if (intJob != -1) {
-                this.strRemoteServerUrl = strUrl.substring(0, intJob);
+    private void setRemoteServerUrl(String remoteServerJobKey, String strUrl) {
+        String remoteJobUrl = this.hmapRemoteServerUrl.get(remoteServerJobKey);
+        if (remoteJobUrl == null) {
+            // Url not found for key.  Add it.
+            if (strUrl == null) {
+                // Remote server url has not been set for this job key.  Default to url in config.
+                RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
+                strUrl = remoteServer.getAddress().toString();
             }
-        } else {
-            // Assume the caller wants to re-initialize remote server url
-            this.strRemoteServerUrl = null;
+            this.hmapRemoteServerUrl.put(remoteServerJobKey, strUrl);
         }
     }
 
@@ -1285,7 +1343,7 @@ public class RemoteBuildConfiguration extends Builder {
     /**
      * This method streams the console output from the remote server based upon the passed in line number offset.
      */
-    private Integer streamRemoteConsoleOutput(String urlString, String requestType, AbstractBuild build, BuildListener listener, int intStart)
+    private Integer streamRemoteConsoleOutput(String urlString, String requestType, AbstractBuild build, BuildListener listener, int intStart, String remoteServerJobKey)
             throws IOException {
 
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
@@ -1371,7 +1429,7 @@ public class RemoteBuildConfiguration extends Builder {
                             intCompletedIdx = line.indexOf(" completed");
                             if (intCompletedIdx != -1) {
                                 strJobNumber = line.substring(intJobNumberIdx + strJobName.length() + 2, intCompletedIdx);
-                                response.append(this.getRemoteServerUrl()).append("/job/");
+                                response.append(this.getRemoteServerUrl(remoteServerJobKey)).append("/job/");
                                 response.append(strJobName).append('/').append(strJobNumber).append('/');
 
                                 listener.getLogger().println();
@@ -1381,6 +1439,9 @@ public class RemoteBuildConfiguration extends Builder {
                                 listener.getLogger().println("--------------------------------------------------------------------------------");
                                 listener.getLogger().println();
                                 listener.getLogger().println("*** Access remote job " + strJobName + ": " + response.toString());
+
+                                // Remote job is done.  Remote job from hash map.
+                                this.hmapRemoteServerUrl.remove(remoteServerJobKey);
                             }
                         }
                     }
