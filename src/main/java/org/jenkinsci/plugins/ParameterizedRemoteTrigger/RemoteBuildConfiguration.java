@@ -475,7 +475,7 @@ public class RemoteBuildConfiguration extends Builder {
         listener.getLogger().println("Build number and job=" + remoteServerJobKey);
 
         // Initialize remote server url.  Ensure initial request uses the load balancer.
-        this.setRemoteServerUrl(remoteServerJobKey, null);
+        this.setRemoteServerUrl(remoteServerJobKey, null, listener);
 
         RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
 
@@ -559,7 +559,7 @@ public class RemoteBuildConfiguration extends Builder {
 
         // Make sure we perform all HTTP requests against the same server for this instance
         String strRemoteUrl =  queryResponseObject.getString("url");
-        this.setRemoteServerUrl(remoteServerJobKey, strRemoteUrl);
+        this.setRemoteServerUrl(remoteServerJobKey, strRemoteUrl, listener);
         listener.getLogger().println("Stick to this remote url: " + this.getRemoteServerUrl(remoteServerJobKey));
 
         if (this.getOverrideAuth()) {
@@ -1313,16 +1313,27 @@ public class RemoteBuildConfiguration extends Builder {
     /**
      * This method persists the remote server url so that all requests can stick to this server.
      */
-    private void setRemoteServerUrl(String remoteServerJobKey, String strUrl) {
-        String remoteJobUrl = this.hmapRemoteServerUrl.get(remoteServerJobKey);
-        if (remoteJobUrl == null) {
-            // Url not found for key.  Add it.
-            if (strUrl == null) {
-                // Remote server url has not been set for this job key.  Default to url in config.
-                RemoteJenkinsServer remoteServer = this.findRemoteHost(this.getRemoteJenkinsName());
-                strUrl = remoteServer.getAddress().toString();
+    private void setRemoteServerUrl(String remoteServerJobKey, String strUrl, BuildListener listener) {
+        if (strUrl != null) {
+            listener.getLogger().println("*** Explicitly set remote server to '" + strUrl + "' for - " + remoteServerJobKey);
+            Integer intJob = strUrl.indexOf("/job");
+            if (intJob != -1) {
+                String strRemoteServerUrl = strUrl.substring(0, intJob);
+                if (this.hmapRemoteServerUrl.get(remoteServerJobKey) != null) {
+                    listener.getLogger().println("*** URL found for key, delete it - " + this.hmapRemoteServerUrl.get(remoteServerJobKey));
+                }
+                listener.getLogger().println("*** Add url for key - " + strRemoteServerUrl);
+                this.hmapRemoteServerUrl.put(remoteServerJobKey, strRemoteServerUrl);
             }
-            this.hmapRemoteServerUrl.put(remoteServerJobKey, strUrl);
+        } else {
+            // Passed in url is null.  Assume new request.
+            listener.getLogger().println("*** Initialize remote server for - " + remoteServerJobKey);
+            if (this.hmapRemoteServerUrl.get(remoteServerJobKey) != null) {
+                listener.getLogger().println("*** URL found for key, delete it - " + this.hmapRemoteServerUrl.get(remoteServerJobKey));
+                this.hmapRemoteServerUrl.remove(remoteServerJobKey);
+            } else {
+                listener.getLogger().println("*** URL NOT found for key");
+            }
         }
     }
 
