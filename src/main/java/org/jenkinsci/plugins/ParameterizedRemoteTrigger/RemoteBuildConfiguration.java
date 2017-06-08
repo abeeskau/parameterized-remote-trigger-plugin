@@ -8,9 +8,12 @@ import hudson.Extension;
 import hudson.util.CopyOnWriteList;
 import hudson.util.ListBoxModel;
 import hudson.model.AbstractBuild;
-import hudson.model.BuildListener;
-import hudson.model.Result;
 import hudson.model.AbstractProject;
+import hudson.model.BuildListener;
+import hudson.model.ParametersAction;
+import hudson.model.ParameterValue;
+import hudson.model.Result;
+import hudson.model.StringParameterValue;
 import hudson.tasks.Builder;
 import hudson.tasks.BuildStepDescriptor;
 import net.sf.json.JSONObject;
@@ -88,6 +91,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     private static String         strWaitMessage      = "Waiting for the completion of ";
 
+    private static String         remoteServerUrlParameter = "remote_server_url";
     @DataBoundConstructor
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild, String job, String token,
             String parameters, boolean enhancedLogging, JSONObject overrideAuth, JSONObject loadParamsFromFile, boolean preventRemoteBuildQueue,
@@ -626,6 +630,22 @@ public class RemoteBuildConfiguration extends Builder {
         String jobURL = strRemoteUrl;
 
         listener.getLogger().println("Remote job URL link: " + jobURL + Integer.toString(nextBuildNumber)); //useful when the job fails you can just click on link
+
+        // Update job parameter with url to remote server
+        ParameterValue remoteServerUrlParamValue = new StringParameterValue(this.remoteServerUrlParameter, jobURL + Integer.toString(nextBuildNumber), "Dynamically generated.");
+        ParametersAction buildAction = build.getAction(ParametersAction.class);
+        if (buildAction != null) {
+            List<ParameterValue> buildParameters = new ArrayList<ParameterValue>(buildAction.getParameters());
+            buildParameters.remove(new StringParameterValue(this.remoteServerUrlParameter, ""));
+            buildParameters.add(remoteServerUrlParamValue);
+            buildAction = new ParametersAction(buildParameters);
+            listener.getLogger().println("Parameters are present, replace them");
+            build.replaceAction(buildAction);
+        } else {
+            listener.getLogger().println("Parameters are not present, add it");
+            buildAction = new ParametersAction(remoteServerUrlParamValue);
+            build.addAction(buildAction);
+        }
 
         // This is only for Debug
         // This output whether there is another job running on the remote host that this job had conflicted with.
