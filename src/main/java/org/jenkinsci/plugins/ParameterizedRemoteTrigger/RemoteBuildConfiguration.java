@@ -1,5 +1,6 @@
 package org.jenkinsci.plugins.ParameterizedRemoteTrigger;
 
+import com.wangyin.parameter.*;
 import hudson.AbortException;
 import hudson.FilePath;
 import hudson.EnvVars;
@@ -632,11 +633,11 @@ public class RemoteBuildConfiguration extends Builder {
         listener.getLogger().println("Remote job URL link: " + jobURL + Integer.toString(nextBuildNumber)); //useful when the job fails you can just click on link
 
         // Update job parameter with url to remote server
-        ParameterValue remoteServerUrlParamValue = new StringParameterValue(this.remoteServerUrlParameter, jobURL + Integer.toString(nextBuildNumber), "Dynamically generated.");
+        ParameterValue remoteServerUrlParamValue = new WHideParameterValue(this.remoteServerUrlParameter, jobURL + Integer.toString(nextBuildNumber), "Dynamically generated.");
         ParametersAction buildAction = build.getAction(ParametersAction.class);
         if (buildAction != null) {
             List<ParameterValue> buildParameters = new ArrayList<ParameterValue>(buildAction.getParameters());
-            buildParameters.remove(new StringParameterValue(this.remoteServerUrlParameter, ""));
+            buildParameters.remove(new WHideParameterValue(this.remoteServerUrlParameter, ""));
             buildParameters.add(remoteServerUrlParamValue);
             buildAction = new ParametersAction(buildParameters);
             listener.getLogger().println("Parameters are present, replace them");
