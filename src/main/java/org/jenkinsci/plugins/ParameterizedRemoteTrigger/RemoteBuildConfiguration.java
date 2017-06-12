@@ -1,5 +1,6 @@
 package org.jenkinsci.plugins.ParameterizedRemoteTrigger;
 
+import com.wangyin.parameter.*;
 import hudson.AbortException;
 import hudson.FilePath;
 import hudson.EnvVars;
@@ -13,7 +14,6 @@ import hudson.model.BuildListener;
 import hudson.model.ParametersAction;
 import hudson.model.ParameterValue;
 import hudson.model.Result;
-import hudson.model.StringParameterValue;
 import hudson.tasks.Builder;
 import hudson.tasks.BuildStepDescriptor;
 import net.sf.json.JSONObject;
@@ -91,7 +91,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     private static String         strWaitMessage      = "Waiting for the completion of ";
 
-    private static String         remoteServerUrlParameter = "remote_server_url";
+    private static String         remoteServerUrlParameter = "dp_remote_server_url";
     @DataBoundConstructor
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild, String job, String token,
             String parameters, boolean enhancedLogging, JSONObject overrideAuth, JSONObject loadParamsFromFile, boolean preventRemoteBuildQueue,
@@ -632,11 +632,11 @@ public class RemoteBuildConfiguration extends Builder {
         listener.getLogger().println("Remote job URL link: " + jobURL + Integer.toString(nextBuildNumber)); //useful when the job fails you can just click on link
 
         // Update job parameter with url to remote server
-        ParameterValue remoteServerUrlParamValue = new StringParameterValue(this.remoteServerUrlParameter, jobURL + Integer.toString(nextBuildNumber), "Dynamically generated.");
+        ParameterValue remoteServerUrlParamValue = new WHideParameterValue(this.remoteServerUrlParameter, jobURL + Integer.toString(nextBuildNumber), "Dynamically generated.");
         ParametersAction buildAction = build.getAction(ParametersAction.class);
         if (buildAction != null) {
             List<ParameterValue> buildParameters = new ArrayList<ParameterValue>(buildAction.getParameters());
-            buildParameters.remove(new StringParameterValue(this.remoteServerUrlParameter, ""));
+            buildParameters.remove(new WHideParameterValue(this.remoteServerUrlParameter, ""));
             buildParameters.add(remoteServerUrlParamValue);
             buildAction = new ParametersAction(buildParameters);
             listener.getLogger().println("Parameters are present, replace them");
