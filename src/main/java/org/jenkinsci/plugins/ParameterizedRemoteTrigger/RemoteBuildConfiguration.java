@@ -14,7 +14,6 @@ import hudson.model.BuildListener;
 import hudson.model.ParametersAction;
 import hudson.model.ParameterValue;
 import hudson.model.Result;
-import hudson.model.StringParameterValue;
 import hudson.tasks.Builder;
 import hudson.tasks.BuildStepDescriptor;
 import net.sf.json.JSONObject;
@@ -92,7 +91,7 @@ public class RemoteBuildConfiguration extends Builder {
 
     private static String         strWaitMessage      = "Waiting for the completion of ";
 
-    private static String         remoteServerUrlParameter = "remote_server_url";
+    private static String         remoteServerUrlParameter = "dp_remote_server_url";
     @DataBoundConstructor
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild, String job, String token,
             String parameters, boolean enhancedLogging, JSONObject overrideAuth, JSONObject loadParamsFromFile, boolean preventRemoteBuildQueue,
