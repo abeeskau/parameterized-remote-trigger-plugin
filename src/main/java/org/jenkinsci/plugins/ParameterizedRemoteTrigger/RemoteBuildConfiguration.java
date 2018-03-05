@@ -952,7 +952,7 @@ public class RemoteBuildConfiguration extends Builder {
 
         try {
             connection.setDoInput(true);
-            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Accept", "application/json, text/html");
             connection.setRequestMethod(requestType);
             // wait up to 5 seconds for the connection to be open
             connection.setConnectTimeout(5000);
@@ -1071,7 +1071,7 @@ public class RemoteBuildConfiguration extends Builder {
 
         try {
             connection.setDoInput(true);
-            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Accept", "application/json, text/html");
             connection.setRequestMethod(requestType);
             // wait up to 5 seconds for the connection to be open
             connection.setConnectTimeout(5000);
@@ -1415,7 +1415,7 @@ public class RemoteBuildConfiguration extends Builder {
 
         try {
             connection.setDoInput(true);
-            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Accept", "application/json, text/html");
             connection.setRequestMethod(requestType);
             // wait up to 5 seconds for the connection to be open
             connection.setConnectTimeout(5000);
