@@ -47,6 +47,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 
+import org.apache.commons.lang.math.NumberUtils;
 import org.apache.commons.codec.binary.Base64;
 
 /**
@@ -92,6 +93,10 @@ public class RemoteBuildConfiguration extends Builder {
     private static String         strWaitMessage      = "Waiting for the completion of ";
 
     private static String         remoteServerUrlParameter = "dp_remote_server_url";
+    
+    private static final int CONSOLE_SLEEP_SEC = NumberUtils.toInt(
+            System.getProperty("plugins.ParameterizedRemoteTrigger.config.consoleSleepSeconds",
+                    String.valueOf("5")), 5);
     @DataBoundConstructor
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild, String job, String token,
             String parameters, boolean enhancedLogging, JSONObject overrideAuth, JSONObject loadParamsFromFile, boolean preventRemoteBuildQueue,
@@ -584,7 +589,8 @@ public class RemoteBuildConfiguration extends Builder {
         Thread.sleep(5 * 1000);
 
         // Validate the build number via parameters
-        foundIt: for (int tries = 3; tries > 0; tries--) {
+        boolean foundIt = false;
+        while (!foundIt) {
             for (int buildNumber : new SearchPattern(nextBuildNumber, 2)) {
                 listener.getLogger().println("Checking parameters of #" + buildNumber);
                 // Use the 'tree' parameter on query-string to limit the response to what we are looking for
@@ -606,16 +612,16 @@ public class RemoteBuildConfiguration extends Builder {
                         // or multiple jobs use the same parameters.
                     if (compareUpstreamParameters(build, listener, parameters, upstreamBuildNumber, upstreamJobName)) {
                         nextBuildNumber = buildNumber;
-                        break foundIt;
+                        foundIt = true;
                     }
                     // This is the wrong build
                     break;
                 }
 
-                // Sleep for 'pollInterval' seconds.
+                // Sleep for '30' seconds.
                 // Sleep takes miliseconds so need to convert this.pollInterval to milisecopnds (x 1000)
                 try {
-                    Thread.sleep(this.pollInterval * 1000);
+                    Thread.sleep(30 * 1000);
                 } catch (InterruptedException e) {
                     this.failBuild(e, listener);
                 }
@@ -697,7 +703,7 @@ public class RemoteBuildConfiguration extends Builder {
                 try {
                     // Could do with a better way of sleeping...
                     if (this.getEnhancedLogging()) {
-                        Thread.sleep(5 * 1000);
+                        Thread.sleep(this.CONSOLE_SLEEP_SEC * 1000);
                         intStart = this.streamRemoteConsoleOutput(buildStreamUrl, "GET", build, listener, intStart, remoteServerJobKey);
                     } else {
                         Thread.sleep(this.pollInterval * 1000);
