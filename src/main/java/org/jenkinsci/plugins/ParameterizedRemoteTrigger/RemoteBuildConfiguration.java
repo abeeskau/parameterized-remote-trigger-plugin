@@ -98,7 +98,7 @@ public class RemoteBuildConfiguration extends Builder {
             System.getProperty("plugins.ParameterizedRemoteTrigger.config.consoleSleepSeconds",
                     String.valueOf("5")), 5);
 
-    private static final int MAX_PARAM_TRIES = 180;
+    private static final int MAX_PARAM_TRIES = 720;
 
     @DataBoundConstructor
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild, String job, String token,
@@ -595,7 +595,9 @@ public class RemoteBuildConfiguration extends Builder {
         boolean foundIt = false;
         int numberOfTries = 0;
         while (!foundIt && numberOfTries <= this.MAX_PARAM_TRIES) {
-            for (int buildNumber : new SearchPattern(nextBuildNumber, 4)) {
+            int startSearchBuildNumber = nextBuildNumber - 2;
+            int endSearchBuildNumber = nextBuildNumber + 8;
+            for (int buildNumber = startSearchBuildNumber; buildNumber < endSearchBuildNumber; buildNumber++) {
                 listener.getLogger().println("Checking parameters of #" + buildNumber);
                 // Use the 'tree' parameter on query-string to limit the response to what we are looking for
                 String validateUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey) + "/" + buildNumber + "/api/json/?tree=actions[parameters[name,value]]";
