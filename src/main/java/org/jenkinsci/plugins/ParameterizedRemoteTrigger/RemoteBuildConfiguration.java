@@ -97,6 +97,9 @@ public class RemoteBuildConfiguration extends Builder {
     private static final int CONSOLE_SLEEP_SEC = NumberUtils.toInt(
             System.getProperty("plugins.ParameterizedRemoteTrigger.config.consoleSleepSeconds",
                     String.valueOf("5")), 5);
+
+    private static final int MAX_PARAM_TRIES = 180;
+
     @DataBoundConstructor
     public RemoteBuildConfiguration(String remoteJenkinsName, boolean shouldNotFailBuild, String job, String token,
             String parameters, boolean enhancedLogging, JSONObject overrideAuth, JSONObject loadParamsFromFile, boolean preventRemoteBuildQueue,
@@ -590,8 +593,9 @@ public class RemoteBuildConfiguration extends Builder {
 
         // Validate the build number via parameters
         boolean foundIt = false;
-        while (!foundIt) {
-            for (int buildNumber : new SearchPattern(nextBuildNumber, 2)) {
+        int numberOfTries = 0;
+        while (!foundIt && numberOfTries <= this.MAX_PARAM_TRIES) {
+            for (int buildNumber : new SearchPattern(nextBuildNumber, 4)) {
                 listener.getLogger().println("Checking parameters of #" + buildNumber);
                 // Use the 'tree' parameter on query-string to limit the response to what we are looking for
                 String validateUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey) + "/" + buildNumber + "/api/json/?tree=actions[parameters[name,value]]";
@@ -618,14 +622,18 @@ public class RemoteBuildConfiguration extends Builder {
                     break;
                 }
 
-                // Sleep for '30' seconds.
+                // Sleep for '20' seconds.
                 // Sleep takes miliseconds so need to convert this.pollInterval to milisecopnds (x 1000)
                 try {
-                    Thread.sleep(30 * 1000);
+                    Thread.sleep(20 * 1000);
+                    numberOfTries++;
                 } catch (InterruptedException e) {
                     this.failBuild(e, listener);
                 }
             }
+        }
+        if (!foundIt && numberOfTries >= this.MAX_PARAM_TRIES) {
+            this.failBuild(new Exception("Could not locate remote."), listener);
         }
 
         listener.getLogger().println("This job is build #[" + Integer.toString(nextBuildNumber) + "] on the remote server.");
