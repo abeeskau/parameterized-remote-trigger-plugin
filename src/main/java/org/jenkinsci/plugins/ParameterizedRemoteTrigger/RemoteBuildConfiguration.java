@@ -619,6 +619,9 @@ public class RemoteBuildConfiguration extends Builder {
                     if (compareUpstreamParameters(build, listener, parameters, upstreamBuildNumber, upstreamJobName)) {
                         nextBuildNumber = buildNumber;
                         foundIt = true;
+
+                        // Found job.  Jump out of loop
+                        buildNumber = endSearchBuildNumber + 1;
                     }
                     // This is the wrong build
                     break;
