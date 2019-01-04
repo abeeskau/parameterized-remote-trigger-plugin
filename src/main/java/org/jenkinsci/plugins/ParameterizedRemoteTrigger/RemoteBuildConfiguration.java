@@ -528,7 +528,7 @@ public class RemoteBuildConfiguration extends Builder {
             listener.getLogger().println("Checking that the remote job " + jobName + " is not currently building.");
             String preCheckUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey);
             preCheckUrlString += "/lastBuild";
-            preCheckUrlString += "/api/json/";
+            preCheckUrlString += "/api/json?tree=building,result";
             JSONObject preCheckResponse = sendHTTPCall(preCheckUrlString, "GET", build, listener);
 
             if ( preCheckResponse != null ) {
@@ -558,7 +558,7 @@ public class RemoteBuildConfiguration extends Builder {
         }
 
         String queryUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey);
-        queryUrlString += "/api/json/";
+        queryUrlString += "/api/json?tree=nextBuildNumber";
 
         listener.getLogger().println("Getting ID of next job to build. URL: " + queryUrlString);
         JSONObject queryResponseObject = sendHTTPCall(queryUrlString, "GET", build, listener);
@@ -850,7 +850,7 @@ public class RemoteBuildConfiguration extends Builder {
 //                    "Using job-level defined credentails in place of those from remote Jenkins config ["
 //                            + this.getRemoteJenkinsName() + "]");
 //        }
-
+        buildUrlString += "?tree=result,building";
         JSONObject responseObject = sendHTTPCall(buildUrlString, "GET", build, listener);
 
         // get the next build from the location
@@ -890,6 +890,7 @@ public class RemoteBuildConfiguration extends Builder {
                             + this.getRemoteJenkinsName() + "]");
         }
 
+        buildUrlString += "?tree=url";
         JSONObject responseObject = sendHTTPCall(buildUrlString, "GET", build, listener);
 
         // get the next build from the location
@@ -1287,7 +1288,7 @@ public class RemoteBuildConfiguration extends Builder {
         //String remoteServerUrl = remoteServer.getAddress().toString();
         String remoteServerUrl = this.getRemoteServerUrl(remoteServerJobKey);
         remoteServerUrl += "/job/" + encodeValue(jobName);
-        remoteServerUrl += "/api/json";
+        remoteServerUrl += "/api/json?tree=actions";
 
         try {
             JSONObject response = sendHTTPCall(remoteServerUrl, "GET", build, listener);
