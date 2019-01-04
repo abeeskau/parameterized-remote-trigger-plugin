@@ -558,7 +558,7 @@ public class RemoteBuildConfiguration extends Builder {
         }
 
         String queryUrlString = this.buildGetUrl(jobName, securityToken, remoteServerJobKey);
-        queryUrlString += "/api/json?tree=nextBuildNumber";
+        queryUrlString += "/api/json?tree=nextBuildNumber,url";
 
         listener.getLogger().println("Getting ID of next job to build. URL: " + queryUrlString);
         JSONObject queryResponseObject = sendHTTPCall(queryUrlString, "GET", build, listener);
